@@ -13,7 +13,7 @@ dist/
 # 环境与密钥
 .env
 .env.*
-*.local
+!.env.example
 
 # 系统
 .DS_Store

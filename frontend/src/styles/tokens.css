@@ -1,0 +1,78 @@
+/* ============================================================
+   Miglore OS — 设计 Token (CSS Variables)
+   视觉语言：App Store 式大留白/大卡片/横向 shelf/精致排版
+   但配色与细节为 Miglore OS 自有（紫罗兰渐变主色系）
+   ============================================================ */
+
+:root {
+  /* 色板 */
+  --c-bg: #f4f5fa;            /* 页面背景 */
+  --c-surface: #ffffff;       /* 卡片表面 */
+  --c-surface-2: #f9fafc;     /* 次级表面(hero内嵌) */
+  --c-text: #151824;          /* 主文字 */
+  --c-text-2: #5b6270;        /* 次级文字 */
+  --c-text-3: #9aa1b0;        /* 弱化文字 */
+  --c-primary: #5b5bd6;       /* 主色 indigo */
+  --c-primary-2: #8b5cf6;     /* 副主色 violet */
+  --c-primary-soft: #eeedfb;  /* 主色浅底 */
+  --c-accent: #10b981;        /* 成功/进度 */
+  --c-warn: #f59e0b;          /* 中优先级 */
+  --c-danger: #ef4444;        /* 高优先级/危险 */
+  --c-border: #e6e8f0;        /* 描边 */
+
+  /* 渐变(品牌) */
+  --grad-brand: linear-gradient(135deg, #5b5bd6 0%, #8b5cf6 60%, #a78bfa 100%);
+  --grad-hero: linear-gradient(135deg, #4f46e5 0%, #7c3aed 55%, #9333ea 100%);
+
+  /* 圆角 */
+  --r-lg: 20px;
+  --r-md: 14px;
+  --r-sm: 8px;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px rgba(21, 24, 36, 0.05);
+  --shadow-md: 0 6px 20px rgba(21, 24, 36, 0.07);
+  --shadow-lg: 0 16px 40px rgba(21, 24, 36, 0.12);
+
+  /* 间距 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+
+  /* 字体 */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Roboto, sans-serif;
+
+  /* 字号 */
+  --fs-title: clamp(2rem, 4vw, 3rem);      /* 首页大标题 */
+  --fs-h2: clamp(1.4rem, 2.4vw, 1.75rem);  /* 分区标题 */
+  --fs-h3: 1.1rem;
+  --fs-body: 0.95rem;
+  --fs-small: 0.85rem;
+  --fs-micro: 0.78rem;
+
+  /* 布局 */
+  --page-max: 1200px;
+  --header-h: 64px;
+
+  /* 过渡 */
+  --t-fast: 0.15s ease;
+  --t-med: 0.25s ease;
+}
+
+/* 暗色预留：V1 不启用 */
+[data-theme='dark'] {
+  --c-bg: #0f1117;
+  --c-surface: #181b25;
+  --c-surface-2: #20242f;
+  --c-text: #eef0f6;
+  --c-text-2: #a7adbd;
+  --c-text-3: #6b7280;
+  --c-border: #2a2f3d;
+  --grad-hero: linear-gradient(135deg, #4338ca 0%, #6d28d9 55%, #7e22ce 100%);
+}
