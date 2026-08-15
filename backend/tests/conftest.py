@@ -43,10 +43,15 @@ BASE_SEED = [
      "VALUES (1, 1, 'learning', '测试任务A', 'done', 2, 1, 1), "
      "(2, 1, 'learning', '测试任务B', 'in_progress', 3, 1, 1), "
      "(3, 1, 'learning', '测试任务C', 'todo', 1, 1, 1)", ()),
+    ("INSERT INTO projects (id, user_id, name, tech_stack, status, progress, featured) "
+     "VALUES (1, 1, '测试项目', 'Svelte·Flask·Docker', 'active', 50, 1)", ()),
 ]
 
 TRUNCATE = [
     "SET FOREIGN_KEY_CHECKS = 0",
+    "TRUNCATE interview_evidence",
+    "TRUNCATE project_evidence",
+    "TRUNCATE project_milestones",
     "TRUNCATE study_logs",
     "TRUNCATE tasks",
     "TRUNCATE skills",
@@ -62,17 +67,18 @@ TRUNCATE = [
 
 @pytest.fixture(scope="session", autouse=True)
 def _schema():
-    """建测试库表结构 (一次)。"""
+    """建测试库表结构 (一次): 缺任一核心表即执行完整 schema.sql (幂等)。"""
     conn = app_module.get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM information_schema.tables "
-                        "WHERE table_schema = DATABASE() AND table_name = 'users'")
+                        "WHERE table_schema = DATABASE() AND table_name = 'project_evidence'")
             if cur.fetchone()["COUNT(*)"] == 0:
-                # 先整行过滤注释 (注释内可能含分号), 再按分号拆分执行
+                # 先整行过滤注释与 USE 切换 (防串库), 再按分号拆分执行
                 clean = "\n".join(
                     line for line in SCHEMA_SQL.read_text(encoding="utf-8").splitlines()
                     if not line.strip().startswith("--")
+                    and not line.strip().upper().startswith("USE ")
                 )
                 for raw in clean.split(";"):
                     stmt = raw.strip()

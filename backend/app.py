@@ -881,11 +881,202 @@ def jd_analyze():
     return jsonify({"data": result})
 
 
-# ========== 其他模块 (骨架, 后续阶段) ==========
+# ========== Projects + Evidence ==========
+
+EVIDENCE_CATEGORIES = {
+    "architecture", "linux", "docker", "network", "ci_cd",
+    "monitoring", "database", "security", "troubleshooting",
+}
+MILESTONE_STATUS = {"done", "current", "todo"}
+
 
 @app.get("/api/projects")
 def projects():
-    return jsonify({"data": {"projects": []}})
+    """项目列表 + 统计 (数量/完成/技术栈/里程碑)。"""
+    rows = query(
+        "SELECT * FROM projects WHERE user_id = %s AND deleted_at IS NULL ORDER BY featured DESC, id",
+        (USER_ID,),
+    )
+    stats_row = query_one(
+        """
+        SELECT COUNT(*) AS total,
+               SUM(status = 'done') AS done,
+               COUNT(DISTINCT tech_stack) AS tech_stacks
+        FROM projects WHERE user_id = %s AND deleted_at IS NULL
+        """,
+        (USER_ID,),
+    ) or {}
+    milestones = query_one(
+        "SELECT COUNT(*) c FROM project_milestones WHERE user_id = %s AND deleted_at IS NULL",
+        (USER_ID,),
+    ) or {}
+    stats = {
+        "total": int(stats_row.get("total") or 0),
+        "done": int(stats_row.get("done") or 0),
+        "tech_stacks": int(stats_row.get("tech_stacks") or 0),
+        "milestones": int(milestones.get("c") or 0),
+    }
+    for p in rows:
+        cnt = query_one(
+            "SELECT COUNT(*) c FROM project_evidence WHERE project_id = %s AND deleted_at IS NULL",
+            (p["id"],),
+        ) or {}
+        p["evidence_count"] = int(cnt.get("c") or 0)
+    return jsonify({"data": {"projects": rows, "stats": stats}})
+
+
+@app.get("/api/projects/<int:pid>")
+def project_detail(pid: int):
+    """项目详情: 项目 + 里程碑 + 技术证据 + 面试证据数。"""
+    row = query_one(
+        "SELECT * FROM projects WHERE id = %s AND user_id = %s AND deleted_at IS NULL",
+        (pid, USER_ID),
+    )
+    if not row:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "project not found"}}), 404
+    milestones = query(
+        "SELECT * FROM project_milestones WHERE project_id = %s AND user_id = %s AND deleted_at IS NULL "
+        "ORDER BY sort_order, id",
+        (pid, USER_ID),
+    )
+    evidence = query(
+        "SELECT * FROM project_evidence WHERE project_id = %s AND user_id = %s AND deleted_at IS NULL "
+        "ORDER BY id",
+        (pid, USER_ID),
+    )
+    for e in evidence:
+        ivw = query_one(
+            "SELECT COUNT(*) c FROM interview_evidence WHERE evidence_id = %s AND deleted_at IS NULL",
+            (e["id"],),
+        ) or {}
+        e["interview_count"] = int(ivw.get("c") or 0)
+        e["interviews"] = query(
+            """
+            SELECT i.*, s.name AS skill_name
+            FROM interview_evidence i
+            LEFT JOIN skills s ON s.id = i.skill_id AND s.deleted_at IS NULL
+            WHERE i.evidence_id = %s AND i.user_id = %s AND i.deleted_at IS NULL
+            ORDER BY i.id
+            """,
+            (e["id"], USER_ID),
+        )
+    return jsonify({"data": {"project": row, "milestones": milestones, "evidence": evidence}})
+
+
+# ---- Evidence ----
+
+@app.get("/api/projects/<int:pid>/evidence")
+def list_evidence(pid: int):
+    rows = query(
+        "SELECT * FROM project_evidence WHERE project_id = %s AND user_id = %s AND deleted_at IS NULL ORDER BY id",
+        (pid, USER_ID),
+    )
+    return jsonify({"data": {"evidence": rows}})
+
+
+@app.post("/api/projects/<int:pid>/evidence")
+def create_evidence(pid: int):
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "title required"}}), 422
+    category = body.get("category", "docker")
+    if category not in EVIDENCE_CATEGORIES:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": f"invalid category: {category}"}}), 422
+    proj = query_one("SELECT id FROM projects WHERE id = %s AND user_id = %s AND deleted_at IS NULL", (pid, USER_ID))
+    if not proj:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "project not found"}}), 404
+    eid = execute(
+        "INSERT INTO project_evidence (user_id, project_id, title, category, description, technical_detail, result) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (USER_ID, pid, title, category, body.get("description"), body.get("technical_detail"), body.get("result")),
+    )
+    return jsonify({"data": {"evidence": query_one(
+        "SELECT * FROM project_evidence WHERE id = %s", (eid,))}}), 201
+
+
+@app.patch("/api/evidence/<int:eid>")
+def patch_evidence(eid: int):
+    body = request.get_json(silent=True) or {}
+    row = query_one("SELECT id FROM project_evidence WHERE id = %s AND user_id = %s AND deleted_at IS NULL", (eid, USER_ID))
+    if not row:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "evidence not found"}}), 404
+    updates, params = [], []
+    for field in ("title", "category", "description", "technical_detail", "result"):
+        if field in body and body[field] is not None:
+            if field == "category" and body[field] not in EVIDENCE_CATEGORIES:
+                return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "invalid category"}}), 422
+            updates.append(f"{field} = %s")
+            params.append(body[field])
+    if not updates:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "no fields to update"}}), 422
+    params += [eid, USER_ID]
+    execute("UPDATE project_evidence SET " + ", ".join(updates) + ", updated_at = NOW() WHERE id = %s AND user_id = %s", tuple(params))
+    return jsonify({"data": {"evidence": query_one(
+        "SELECT * FROM project_evidence WHERE id = %s", (eid,))}})
+
+
+@app.delete("/api/evidence/<int:eid>")
+def delete_evidence(eid: int):
+    row = query_one("SELECT id FROM project_evidence WHERE id = %s AND user_id = %s AND deleted_at IS NULL", (eid, USER_ID))
+    if not row:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "evidence not found"}}), 404
+    execute("UPDATE project_evidence SET deleted_at = NOW(), updated_at = NOW() WHERE id = %s", (eid,))
+    return jsonify({"data": {"deleted": True}})
+
+
+# ---- Interview Evidence ----
+
+@app.get("/api/evidence/<int:eid>/interview")
+def list_interview_evidence(eid: int):
+    """某条技术证据关联的面试问答。"""
+    rows = query(
+        """
+        SELECT i.*, s.name AS skill_name
+        FROM interview_evidence i
+        LEFT JOIN skills s ON s.id = i.skill_id AND s.deleted_at IS NULL
+        WHERE i.evidence_id = %s AND i.user_id = %s AND i.deleted_at IS NULL
+        ORDER BY i.id
+        """,
+        (eid, USER_ID),
+    )
+    return jsonify({"data": {"interviews": rows}})
+
+
+@app.post("/api/evidence/<int:eid>/interview")
+def create_interview_evidence(eid: int):
+    """创建面试问答 (关联证据 + 可选 skill)。"""
+    body = request.get_json(silent=True) or {}
+    question = (body.get("question") or "").strip()
+    answer = (body.get("answer") or "").strip()
+    if not question or not answer:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "question and answer required"}}), 422
+    ev = query_one("SELECT id, project_id FROM project_evidence WHERE id = %s AND user_id = %s AND deleted_at IS NULL", (eid, USER_ID))
+    if not ev:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "evidence not found"}}), 404
+    skill_id = body.get("skill_id")
+    if skill_id is not None:
+        sk = query_one("SELECT id FROM skills WHERE id = %s AND user_id = %s AND deleted_at IS NULL", (skill_id, USER_ID))
+        if not sk:
+            return jsonify({"error": {"code": "NOT_FOUND", "message": "skill not found"}}), 404
+    iid = execute(
+        "INSERT INTO interview_evidence (user_id, project_id, evidence_id, skill_id, question, answer) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (USER_ID, ev["project_id"], eid, skill_id, question, answer),
+    )
+    row = query_one(
+        """
+        SELECT i.*, s.name AS skill_name
+        FROM interview_evidence i
+        LEFT JOIN skills s ON s.id = i.skill_id AND s.deleted_at IS NULL
+        WHERE i.id = %s
+        """,
+        (iid,),
+    )
+    return jsonify({"data": {"interview": row}}), 201
+
+
+# ========== 其他模块 (骨架, 后续阶段) ==========
 
 
 @app.get("/api/journal")

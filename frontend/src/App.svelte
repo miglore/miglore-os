@@ -5,6 +5,7 @@
   import Learning from './routes/Learning.svelte';
   import Career from './routes/Career.svelte';
   import Projects from './routes/Projects.svelte';
+  import ProjectDetail from './routes/ProjectDetail.svelte';
   import Tasks from './routes/Tasks.svelte';
   import Journal from './routes/Journal.svelte';
   import Blog from './routes/Blog.svelte';
@@ -32,7 +33,13 @@
   {:else if route.startsWith('#/career')}
     <Career />
   {:else if route.startsWith('#/projects')}
-    <Projects />
+    {#if /^#\/projects\/\d+$/.test(route)}
+      {#key route}
+        <ProjectDetail projectId={parseInt(route.split('/')[2], 10)} />
+      {/key}
+    {:else}
+      <Projects />
+    {/if}
   {:else if route.startsWith('#/tasks')}
     <Tasks />
   {:else if route.startsWith('#/journal')}

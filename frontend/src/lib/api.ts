@@ -69,6 +69,44 @@ export interface Project {
   status: string;
   progress: number;
   featured: boolean;
+  evidence_count?: number;
+}
+
+export interface ProjectListData {
+  projects: Project[];
+  stats: { total: number; done: number; tech_stacks: number; milestones: number };
+}
+
+export interface EvidenceInterview {
+  id: number;
+  question: string;
+  answer: string;
+  skill_name: string | null;
+}
+
+export interface Evidence {
+  id: number;
+  title: string;
+  category: string;
+  description: string | null;
+  technical_detail: string | null;
+  result: string | null;
+  interview_count: number;
+  interviews: EvidenceInterview[];
+}
+
+export interface Milestone {
+  id: number;
+  title: string;
+  status: 'done' | 'current' | 'todo';
+  sort_order: number;
+  achieved_at: string | null;
+}
+
+export interface ProjectDetailData {
+  project: Project;
+  milestones: Milestone[];
+  evidence: Evidence[];
 }
 
 export interface StudyLog {
