@@ -1,0 +1,68 @@
+# Miglore OS — 开发环境专用 Compose (与生产完全隔离)
+# MySQL 独立 volume, 不连接生产 miglore 库
+# 所有宿主端口仅绑定 127.0.0.1, 禁止 0.0.0.0
+name: miglore-os
+
+services:
+  backend:
+    build: ./backend
+    container_name: miglore-os-backend
+    environment:
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_USER: ${MYSQL_USER:-miglore_os}
+      DATABASE_PASSWORD: ${MYSQL_PASSWORD:?请在 .env 设置 MYSQL_PASSWORD}
+      DATABASE_NAME: miglore_os
+      FLASK_HOST: 0.0.0.0
+      FLASK_PORT: 5001
+      CORS_ORIGINS: http://127.0.0.1:5173
+    ports:
+      - "127.0.0.1:5001:5001"
+    volumes:
+      - generated-posts:/generated-posts
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build: ./frontend
+    container_name: miglore-os-frontend
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql:
+    image: mysql:8.0
+    container_name: miglore-os-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: miglore_os
+      MYSQL_USER: ${MYSQL_USER:-miglore_os}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请在 .env 设置 MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 首次启动自动建表 + 灌初始数据 (仅容器内 mysql, 不影响宿主)
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./backend/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  mysql-data:
+  generated-posts:

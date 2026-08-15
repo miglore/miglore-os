@@ -1,5 +1,6 @@
-// Miglore OS — API 客户端 (V1.2: 对接真实后端 127.0.0.1:5001)
-const API_BASE = 'http://127.0.0.1:5001';
+// Miglore OS — API 客户端
+// 同源相对路径: dev 由 Vite proxy 转发到 5001, 容器内由 nginx /api 代理到 backend 服务
+const API_BASE = '';
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {

@@ -160,6 +160,8 @@ CREATE TABLE IF NOT EXISTS study_logs (
     id           BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id      BIGINT UNSIGNED NOT NULL,
     log_date     DATE NOT NULL,
+    task_id      BIGINT UNSIGNED NULL COMMENT '关联学习任务 (migration 002)',
+    title        VARCHAR(200) NULL COMMENT '记录标题, 默认取任务标题',
     content      TEXT NOT NULL,
     duration_min INT NULL,
     mood         TINYINT NULL COMMENT '1-5',
@@ -170,9 +172,11 @@ CREATE TABLE IF NOT EXISTS study_logs (
     updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_logs_user (user_id),
     INDEX idx_logs_user_date (user_id, log_date),
+    INDEX idx_logs_task (task_id),
     INDEX idx_logs_track (track_id),
     INDEX idx_logs_project (project_id),
     CONSTRAINT fk_logs_user    FOREIGN KEY (user_id)    REFERENCES users(id),
+    CONSTRAINT fk_logs_task    FOREIGN KEY (task_id)    REFERENCES tasks(id),
     CONSTRAINT fk_logs_track   FOREIGN KEY (track_id)   REFERENCES learning_tracks(id),
     CONSTRAINT fk_logs_project FOREIGN KEY (project_id) REFERENCES projects(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
