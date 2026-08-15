@@ -352,6 +352,212 @@ def dashboard():
     })
 
 
+@app.post("/api/tasks")
+def create_task():
+    """创建任务 (测试/日常使用)。"""
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "title required"}}), 422
+    task_type = body.get("type", "daily")
+    if task_type not in {"learning", "project", "daily"}:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": f"invalid type: {task_type}"}}), 422
+    status = body.get("status", "todo")
+    if status not in TASK_STATUS:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": f"invalid status: {status}"}}), 422
+    task_id = execute(
+        """INSERT INTO tasks (user_id, type, title, description, status, priority, due_date, track_id, skill_id, project_id, sort_order)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        (
+            USER_ID, task_type, title,
+            body.get("description"), status,
+            int(body.get("priority", 2)),
+            body.get("due_date") or None,
+            body.get("track_id"), body.get("skill_id"), body.get("project_id"),
+            int(body.get("sort_order", 0)),
+        ),
+    )
+    return jsonify({"data": {"task": get_task(task_id)}}), 201
+
+
+# ========== Study Logs ==========
+
+import re as _re
+
+GENERATED_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "generated-posts"))
+
+
+def slugify(title: str) -> str:
+    """中文保留, 其余转小写+连字符。"""
+    s = _re.sub(r"[^\w\u4e00-\u9fff]+", "-", title.strip().lower(), flags=_re.UNICODE)
+    s = _re.sub(r"-+", "-", s).strip("-")
+    return s or "post"
+
+
+def make_post_markdown(log: dict, task: dict | None) -> str:
+    """生成 Hexo 兼容 front-matter + 正文。"""
+    title = log["title"]
+    date_str = (log["created_at"] or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
+    tags = []
+    if task and task.get("skill_name"):
+        tags.append(task["skill_name"])
+    if task and task.get("track_name"):
+        tags.append(task["track_name"])
+    tags = list(dict.fromkeys(tags)) or ["学习"]
+    tag_lines = "\n".join(f"  - {t}" for t in tags)
+    content = log["content"]
+    task_title = task["title"] if task else "-"
+    return f"""---
+title: "{title}"
+date: "{date_str}"
+categories:
+  - 学习
+tags:
+{tag_lines}
+---
+
+# {title}
+
+## 今天学到了什么
+
+{content}
+
+## 相关任务
+
+{task_title}
+"""
+
+
+def generate_markdown(log: dict, task: dict | None) -> tuple[str, str]:
+    """写入 generated-posts/, 返回 (filename, abspath)。"""
+    os.makedirs(GENERATED_DIR, exist_ok=True)
+    filename = f"{log['log_date']}-{slugify(log['title'])}.md"
+    path = os.path.join(GENERATED_DIR, filename)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(make_post_markdown(log, task))
+    return filename, path
+
+
+def execute_transaction(statements: list[tuple[str, tuple]]) -> int:
+    """多语句原子执行, 返回最后一条的 lastrowid。"""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            last_id = None
+            for sql, params in statements:
+                cur.execute(sql, params)
+                last_id = cur.lastrowid
+            conn.commit()
+            return int(last_id or 0)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+_LOG_SQL = """
+SELECT l.*, t.title AS task_title
+FROM study_logs l
+LEFT JOIN tasks t ON t.id = l.task_id AND t.deleted_at IS NULL
+WHERE l.user_id = %s AND l.deleted_at IS NULL
+"""
+
+
+def get_study_log(log_id: int) -> dict | None:
+    return query_one(_LOG_SQL + " AND l.id = %s", (USER_ID, log_id))
+
+
+@app.post("/api/study-logs")
+def create_study_log():
+    """保存学习记录 (事务: 落库 + 关联任务置为 done) + 生成 Markdown。"""
+    body = request.get_json(silent=True) or {}
+    task_id = body.get("task_id")
+    content = (body.get("content") or "").strip()
+    if not task_id or not content:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "task_id and content required"}}), 422
+    task = get_task(task_id)
+    if not task:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "task not found"}}), 404
+
+    title = (body.get("title") or "").strip() or task["title"]
+    log_date = body.get("log_date") or date.today().isoformat()
+    duration = body.get("duration_min")
+
+    log_id = execute_transaction([
+        (
+            "INSERT INTO study_logs (user_id, log_date, task_id, title, content, duration_min, track_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (USER_ID, log_date, task_id, title, content, duration, task["track_id"]),
+        )
+    ])
+    # 闭环: 记录学习后任务完成
+    if task["status"] != "done":
+        execute(
+            "UPDATE tasks SET status = 'done', completed_at = NOW(), updated_at = NOW() "
+            "WHERE id = %s AND user_id = %s",
+            (task_id, USER_ID),
+        )
+
+    log = get_study_log(log_id) or {}
+    filename, path = generate_markdown(log, task)
+    return jsonify({
+        "data": {
+            "log": log,
+            "task": get_task(task_id),
+            "markdown": {"filename": filename, "path": path},
+        }
+    }), 201
+
+
+@app.get("/api/study-logs")
+def list_study_logs():
+    """学习记录列表, 支持 ?task_id= &limit=。"""
+    where = []
+    params: list = [USER_ID]
+    task_id = request.args.get("task_id")
+    if task_id:
+        where.append("l.task_id = %s")
+        params.append(int(task_id))
+    limit = request.args.get("limit", type=int)
+    sql = _LOG_SQL + (" AND " + " AND ".join(where) if where else "") + " ORDER BY l.log_date DESC, l.id DESC"
+    if limit:
+        sql += " LIMIT %s"
+        params.append(limit)
+    return jsonify({"data": {"logs": query(sql, tuple(params))}})
+
+
+@app.get("/api/study-logs/<int:log_id>")
+def get_study_log_api(log_id: int):
+    log = get_study_log(log_id)
+    if not log:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "study log not found"}}), 404
+    return jsonify({"data": {"log": log}})
+
+
+@app.patch("/api/study-logs/<int:log_id>")
+def patch_study_log(log_id: int):
+    body = request.get_json(silent=True) or {}
+    log = get_study_log(log_id)
+    if not log:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "study log not found"}}), 404
+
+    updates = []
+    params: list = []
+    for field in ("content", "title", "duration_min", "mood", "log_date"):
+        if field in body and body[field] is not None:
+            updates.append(f"{field} = %s")
+            params.append(body[field])
+    if not updates:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "no fields to update"}}), 422
+    params.append(log_id)
+    execute(
+        "UPDATE study_logs SET " + ", ".join(updates) + ", updated_at = NOW() WHERE id = %s AND user_id = %s",
+        tuple(params) + (USER_ID,),
+    )
+    return jsonify({"data": {"log": get_study_log(log_id)}})
+
+
 # ========== 其他模块 (骨架, 后续阶段) ==========
 
 @app.get("/api/projects")

@@ -4,34 +4,64 @@
   import ProgressRing from '../components/shared/ProgressRing.svelte';
   import Badge from '../components/shared/Badge.svelte';
 
-  let data = $state<LearningData | null>(null);
-  let error = $state('');
-  let busy = $state(false);
+    let data = $state<LearningData | null>(null);
+    let error = $state('');
+    let busy = $state(false);
 
-  onMount(load);
+    // 完成学习弹窗
+    let editingTask = $state<Task | null>(null);
+    let draft = $state('');
+    let saving = $state(false);
 
-  async function load() {
-    try {
-      data = await api.get<{ data: LearningData }>('/api/learning').then((r) => r.data);
-      error = '';
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+    onMount(load);
+
+    async function load() {
+      try {
+        data = await api.get<{ data: LearningData }>('/api/learning').then((r) => r.data);
+        error = '';
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
+      }
     }
-  }
 
-  // 完成任务: PATCH → 重新拉取 (刷新状态/进度)
-  async function completeTask(task: Task) {
-    if (busy || task.status === 'done') return;
-    busy = true;
-    try {
-      await api.patch(`/api/tasks/${task.id}`, { status: 'done' });
-      await load();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      busy = false;
+    function openComplete(task: Task) {
+      if (busy || task.status === 'done') return;
+      editingTask = task;
+      draft = '';
     }
-  }
+
+    // 保存学习记录 → 落库 + 任务完成 + 生成 Markdown
+    async function saveLog() {
+      if (!editingTask || saving) return;
+      saving = true;
+      try {
+        await api.post('/api/study-logs', {
+          task_id: editingTask.id,
+          content: draft.trim(),
+        });
+        editingTask = null;
+        await load();
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
+      } finally {
+        saving = false;
+      }
+    }
+
+    // 跳过 → 任务仍完成（无学习记录）
+    async function skipComplete() {
+      if (!editingTask || saving) return;
+      saving = true;
+      try {
+        await api.patch(`/api/tasks/${editingTask.id}`, { status: 'done' });
+        editingTask = null;
+        await load();
+      } catch (e) {
+        error = e instanceof Error ? e.message : String(e);
+      } finally {
+        saving = false;
+      }
+    }
 
   const byStatus = $derived({
     doing: (data?.tasks ?? []).filter((t) => t.status === 'in_progress'),
@@ -107,7 +137,7 @@
               <button
                 class="cc-btn"
                 disabled={busy}
-                onclick={() => completeTask(t)}
+                onclick={() => openComplete(t)}
               >✓ 标记完成</button>
             </article>
           {/each}
@@ -135,7 +165,7 @@
                   class="task-check"
                   class:checked={t.status === 'done'}
                   disabled={busy}
-                  onclick={() => completeTask(t)}
+                  onclick={() => openComplete(t)}
                   aria-label={`完成 ${t.title}`}
                 >{t.status === 'done' ? '✓' : ''}</button>
                 <div class="task-body">
@@ -154,6 +184,29 @@
     </section>
   {/if}
 </div>
+
+{#if editingTask}
+  <div class="modal-backdrop" role="dialog" aria-modal="true" aria-label="完成学习">
+    <div class="modal">
+      <h2 class="modal-title">完成学习</h2>
+      <p class="modal-task">{editingTask.title}</p>
+      <label class="modal-label" for="study-content">今天学到了什么？</label>
+      <textarea
+        id="study-content"
+        class="modal-editor"
+        bind:value={draft}
+        placeholder="用 Markdown 记录今天的学习内容，保存后会自动生成博客草稿…"
+        rows={7}
+      ></textarea>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick={skipComplete} disabled={saving}>跳过</button>
+        <button class="btn-save" onclick={saveLog} disabled={saving || !draft.trim()}>
+          {saving ? '保存中…' : '保存学习记录'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .loading {
@@ -339,4 +392,74 @@
     .learn-hero { flex-direction: column; align-items: flex-start; padding: var(--sp-6); }
     .lh-ring { align-self: center; }
   }
+
+  /* 完成学习 Modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(15, 17, 23, 0.45);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sp-5);
+  }
+  .modal {
+    width: min(560px, 100%);
+    background: var(--c-surface);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg);
+    padding: var(--sp-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+  .modal-title { font-size: var(--fs-h2); font-weight: 800; letter-spacing: -0.02em; }
+  .modal-task {
+    font-size: var(--fs-body);
+    color: var(--c-primary);
+    font-weight: 700;
+    background: var(--c-primary-soft);
+    align-self: flex-start;
+    padding: 4px 14px;
+    border-radius: 999px;
+  }
+  .modal-label { font-size: var(--fs-small); font-weight: 600; color: var(--c-text-2); }
+  .modal-editor {
+    width: 100%;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-md);
+    padding: var(--sp-3) var(--sp-4);
+    font-size: var(--fs-body);
+    line-height: 1.6;
+    resize: vertical;
+    background: var(--c-surface-2);
+    color: var(--c-text);
+    outline: none;
+  }
+  .modal-editor:focus { border-color: var(--c-primary); }
+  .modal-actions { display: flex; justify-content: flex-end; gap: var(--sp-3); margin-top: var(--sp-2); }
+  .btn-ghost {
+    padding: 10px 22px;
+    border-radius: 999px;
+    border: 1px solid var(--c-border);
+    color: var(--c-text-2);
+    font-weight: 600;
+    font-size: var(--fs-body);
+    transition: background var(--t-fast);
+  }
+  .btn-ghost:hover:not(:disabled) { background: var(--c-surface-2); }
+  .btn-save {
+    padding: 10px 24px;
+    border-radius: 999px;
+    background: var(--grad-brand);
+    color: #fff;
+    font-weight: 600;
+    font-size: var(--fs-body);
+    box-shadow: var(--shadow-md);
+    transition: transform var(--t-fast), opacity var(--t-fast);
+  }
+  .btn-save:hover:not(:disabled) { transform: translateY(-1px); }
+  .btn-save:disabled, .btn-ghost:disabled { opacity: 0.55; cursor: not-allowed; }
 </style>
