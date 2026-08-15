@@ -11,7 +11,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-COPY app.py .
+COPY app.py jd_analyzer.py ./
 
 # 非 root 运行 (gunicorn worker)
 RUN useradd --create-home appuser \

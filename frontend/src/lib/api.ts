@@ -108,3 +108,65 @@ export interface DashboardData {
   recent_activity: StudyLog[];
   career_status: Record<string, never>;
 }
+
+// ---- Career ----
+
+export interface CareerDirection {
+  id: number;
+  name: string;
+  description: string | null;
+  target_role: string | null;
+  status: string;
+  application_count: number;
+}
+
+export interface JobApplication {
+  id: number;
+  company: string;
+  position: string;
+  city: string | null;
+  salary: string | null;
+  channel: string | null;
+  status: string;
+  applied_at: string | null;
+  note: string | null;
+  direction_id: number | null;
+  direction_name: string | null;
+}
+
+export interface Interview {
+  id: number;
+  application_id: number;
+  company: string;
+  position: string;
+  round: string;
+  scheduled_at: string | null;
+  interviewer: string | null;
+  result: string;
+  review: string | null;
+}
+
+export interface CareerData {
+  directions: CareerDirection[];
+  stats: {
+    total: number;
+    active: number;
+    interviewing: number;
+    offers: number;
+    rejected: number;
+    pending_interviews: number;
+  };
+  recent_applications: JobApplication[];
+  upcoming_interviews: Interview[];
+  recent_interviews: Interview[];
+}
+
+export interface JDAnalyzeResult {
+  engine: string;
+  total_required: number;
+  required: string[];
+  matched: string[];
+  partial: string[];
+  missing: string[];
+  score: number;
+}

@@ -589,16 +589,303 @@ def patch_study_log(log_id: int):
     return jsonify({"data": {"log": get_study_log(log_id)}})
 
 
+# ========== Career (求职: 方向/投递/面试) ==========
+
+from jd_analyzer import analyze_jd  # noqa: E402
+
+DIR_STATUS = {"active", "paused", "closed"}
+APP_STATUS = {"draft", "applied", "interviewing", "offer", "rejected", "withdrawn"}
+IVW_STATUS = {"pending", "passed", "failed", "offered"}
+
+_APP_SQL = """
+SELECT a.*, d.name AS direction_name
+FROM job_applications a
+LEFT JOIN career_directions d ON d.id = a.direction_id AND d.deleted_at IS NULL
+WHERE a.user_id = %s AND a.deleted_at IS NULL
+"""
+
+_IVW_SQL = """
+SELECT i.*, a.company, a.position
+FROM interviews i
+JOIN job_applications a ON a.id = i.application_id AND a.deleted_at IS NULL
+WHERE i.user_id = %s AND i.deleted_at IS NULL
+"""
+
+
+@app.get("/api/career")
+def career():
+    """求职聚合: 方向 + 统计 + 最近投递 + 待面试 + 最近面试。"""
+    directions = query(
+        "SELECT * FROM career_directions WHERE user_id = %s AND deleted_at IS NULL ORDER BY sort_order, id",
+        (USER_ID,),
+    )
+    # 每个方向的投递统计
+    dir_stats = query(
+        "SELECT direction_id, COUNT(*) cnt FROM job_applications "
+        "WHERE user_id = %s AND deleted_at IS NULL GROUP BY direction_id",
+        (USER_ID,),
+    )
+    stats_map = {r["direction_id"]: r["cnt"] for r in dir_stats}
+    for d in directions:
+        d["application_count"] = stats_map.get(d["id"], 0)
+
+    # 总览统计
+    stats = query_one(
+        """
+        SELECT
+          COUNT(*) AS total,
+          SUM(status IN ('applied','interviewing')) AS active,
+          SUM(status = 'interviewing') AS interviewing,
+          SUM(status = 'offer') AS offers,
+          SUM(status = 'rejected') AS rejected
+        FROM job_applications
+        WHERE user_id = %s AND deleted_at IS NULL
+        """,
+        (USER_ID,),
+    ) or {}
+    for k in ("total", "active", "interviewing", "offers", "rejected"):
+        stats.setdefault(k, 0)
+        stats[k] = int(stats[k] or 0)  # SUM/COUNT 可能返回 str/Decimal
+    stats["pending_interviews"] = int((query_one(
+        "SELECT COUNT(*) c FROM interviews i JOIN job_applications a ON a.id = i.application_id "
+        "WHERE i.user_id = %s AND i.deleted_at IS NULL AND a.deleted_at IS NULL "
+        "AND i.result = 'pending' AND i.scheduled_at >= NOW()",
+        (USER_ID,),
+    ) or {}).get("c") or 0)
+
+    now = datetime.now()
+    upcoming = query(
+        _IVW_SQL + " AND i.result = 'pending' AND i.scheduled_at >= %s ORDER BY i.scheduled_at LIMIT 5",
+        (USER_ID, now.strftime("%Y-%m-%d %H:%M:%S")),
+    )
+    recent_apps = query(_APP_SQL + " ORDER BY a.applied_at DESC, a.id DESC LIMIT 5", (USER_ID,))
+    recent_ivws = query(_IVW_SQL + " ORDER BY i.scheduled_at DESC, i.id DESC LIMIT 5", (USER_ID,))
+
+    return jsonify({
+        "data": {
+            "directions": directions,
+            "stats": stats,
+            "recent_applications": recent_apps,
+            "upcoming_interviews": upcoming,
+            "recent_interviews": recent_ivws,
+        }
+    })
+
+
+# ---- Directions ----
+
+@app.get("/api/career/directions")
+def list_directions():
+    rows = query(
+        "SELECT * FROM career_directions WHERE user_id = %s AND deleted_at IS NULL ORDER BY sort_order, id",
+        (USER_ID,),
+    )
+    return jsonify({"data": {"directions": rows}})
+
+
+@app.post("/api/career/directions")
+def create_direction():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "name required"}}), 422
+    status = body.get("status", "active")
+    if status not in DIR_STATUS:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": f"invalid status: {status}"}}), 422
+    did = execute(
+        "INSERT INTO career_directions (user_id, name, description, target_role, status, sort_order) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (USER_ID, name, body.get("description"), body.get("target_role"), status, int(body.get("sort_order", 0))),
+    )
+    return jsonify({"data": {"direction": query_one(
+        "SELECT * FROM career_directions WHERE id = %s AND user_id = %s", (did, USER_ID))}}), 201
+
+
+@app.patch("/api/career/directions/<int:did>")
+def patch_direction(did: int):
+    body = request.get_json(silent=True) or {}
+    row = query_one("SELECT * FROM career_directions WHERE id = %s AND user_id = %s AND deleted_at IS NULL", (did, USER_ID))
+    if not row:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "direction not found"}}), 404
+    updates, params = [], []
+    for field in ("name", "description", "target_role", "status", "sort_order"):
+        if field in body and body[field] is not None:
+            if field == "status" and body[field] not in DIR_STATUS:
+                return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "invalid status"}}), 422
+            updates.append(f"{field} = %s")
+            params.append(body[field])
+    if not updates:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "no fields to update"}}), 422
+    params += [did, USER_ID]
+    execute("UPDATE career_directions SET " + ", ".join(updates) + ", updated_at = NOW() WHERE id = %s AND user_id = %s", tuple(params))
+    return jsonify({"data": {"direction": query_one(
+        "SELECT * FROM career_directions WHERE id = %s AND user_id = %s", (did, USER_ID))}})
+
+
+@app.delete("/api/career/directions/<int:did>")
+def delete_direction(did: int):
+    row = query_one("SELECT id FROM career_directions WHERE id = %s AND user_id = %s AND deleted_at IS NULL", (did, USER_ID))
+    if not row:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "direction not found"}}), 404
+    execute("UPDATE career_directions SET deleted_at = NOW(), updated_at = NOW() WHERE id = %s", (did,))
+    return jsonify({"data": {"deleted": True}})
+
+
+# ---- Applications ----
+
+@app.get("/api/applications")
+def list_applications():
+    where = []
+    params: list = [USER_ID]
+    for key in ("status", "direction_id"):
+        val = request.args.get(key)
+        if val:
+            where.append(f"a.{key} = %s")
+            params.append(val)
+    sql = _APP_SQL + (" AND " + " AND ".join(where) if where else "") + " ORDER BY a.applied_at DESC, a.id DESC"
+    return jsonify({"data": {"applications": query(sql, tuple(params))}})
+
+
+@app.post("/api/applications")
+def create_application():
+    body = request.get_json(silent=True) or {}
+    company = (body.get("company") or "").strip()
+    position = (body.get("position") or "").strip()
+    if not company or not position:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "company and position required"}}), 422
+    status = body.get("status", "applied")
+    if status not in APP_STATUS:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": f"invalid status: {status}"}}), 422
+    aid = execute(
+        "INSERT INTO job_applications (user_id, direction_id, company, position, city, salary, channel, url, status, applied_at, note) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (
+            USER_ID, body.get("direction_id"), company, position, body.get("city"),
+            body.get("salary"), body.get("channel"), body.get("url"), status,
+            body.get("applied_at") or date.today().isoformat(), body.get("note"),
+        ),
+    )
+    return jsonify({"data": {"application": query_one(_APP_SQL + " AND a.id = %s", (USER_ID, aid))}}), 201
+
+
+@app.patch("/api/applications/<int:aid>")
+def patch_application(aid: int):
+    body = request.get_json(silent=True) or {}
+    row = query_one("SELECT id FROM job_applications WHERE id = %s AND user_id = %s AND deleted_at IS NULL", (aid, USER_ID))
+    if not row:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "application not found"}}), 404
+    updates, params = [], []
+    for field in ("company", "position", "city", "salary", "channel", "url", "status", "applied_at", "note", "direction_id"):
+        if field in body and body[field] is not None:
+            if field == "status" and body[field] not in APP_STATUS:
+                return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "invalid status"}}), 422
+            updates.append(f"{field} = %s")
+            params.append(body[field])
+    if not updates:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "no fields to update"}}), 422
+    params += [aid, USER_ID]
+    execute("UPDATE job_applications SET " + ", ".join(updates) + ", updated_at = NOW() WHERE id = %s AND user_id = %s", tuple(params))
+    return jsonify({"data": {"application": query_one(_APP_SQL + " AND a.id = %s", (USER_ID, aid))}})
+
+
+@app.delete("/api/applications/<int:aid>")
+def delete_application(aid: int):
+    row = query_one("SELECT id FROM job_applications WHERE id = %s AND user_id = %s AND deleted_at IS NULL", (aid, USER_ID))
+    if not row:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "application not found"}}), 404
+    execute("UPDATE job_applications SET deleted_at = NOW(), updated_at = NOW() WHERE id = %s", (aid,))
+    return jsonify({"data": {"deleted": True}})
+
+
+# ---- Interviews ----
+
+@app.get("/api/interviews")
+def list_interviews():
+    where = []
+    params: list = [USER_ID]
+    for key in ("result", "application_id"):
+        val = request.args.get(key)
+        if val:
+            where.append(f"i.{key} = %s")
+            params.append(val)
+    sql = _IVW_SQL + (" AND " + " AND ".join(where) if where else "") + " ORDER BY i.scheduled_at DESC, i.id DESC"
+    return jsonify({"data": {"interviews": query(sql, tuple(params))}})
+
+
+@app.post("/api/interviews")
+def create_interview():
+    body = request.get_json(silent=True) or {}
+    application_id = body.get("application_id")
+    if not application_id:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "application_id required"}}), 422
+    app = query_one("SELECT id FROM job_applications WHERE id = %s AND user_id = %s AND deleted_at IS NULL", (application_id, USER_ID))
+    if not app:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "application not found"}}), 404
+    result = body.get("result", "pending")
+    if result not in IVW_STATUS:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "invalid result"}}), 422
+    iid = execute(
+        "INSERT INTO interviews (user_id, application_id, round, scheduled_at, interviewer, result, review, note) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        (USER_ID, application_id, body.get("round", "一面"), body.get("scheduled_at"),
+         body.get("interviewer"), result, body.get("review"), body.get("note")),
+    )
+    return jsonify({"data": {"interview": query_one(_IVW_SQL + " AND i.id = %s", (USER_ID, iid))}}), 201
+
+
+@app.patch("/api/interviews/<int:iid>")
+def patch_interview(iid: int):
+    body = request.get_json(silent=True) or {}
+    row = query_one("SELECT id FROM interviews WHERE id = %s AND user_id = %s AND deleted_at IS NULL", (iid, USER_ID))
+    if not row:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "interview not found"}}), 404
+    updates, params = [], []
+    for field in ("round", "scheduled_at", "interviewer", "result", "review", "note"):
+        if field in body and body[field] is not None:
+            if field == "result" and body[field] not in IVW_STATUS:
+                return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "invalid result"}}), 422
+            updates.append(f"{field} = %s")
+            params.append(body[field])
+    if not updates:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "no fields to update"}}), 422
+    params += [iid, USER_ID]
+    execute("UPDATE interviews SET " + ", ".join(updates) + ", updated_at = NOW() WHERE id = %s AND user_id = %s", tuple(params))
+    return jsonify({"data": {"interview": query_one(_IVW_SQL + " AND i.id = %s", (USER_ID, iid))}})
+
+
+@app.delete("/api/interviews/<int:iid>")
+def delete_interview(iid: int):
+    row = query_one("SELECT id FROM interviews WHERE id = %s AND user_id = %s AND deleted_at IS NULL", (iid, USER_ID))
+    if not row:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "interview not found"}}), 404
+    execute("UPDATE interviews SET deleted_at = NOW(), updated_at = NOW() WHERE id = %s", (iid,))
+    return jsonify({"data": {"deleted": True}})
+
+
+# ---- JD Analyzer ----
+
+@app.post("/api/jd-analyze")
+def jd_analyze():
+    """Rule-based JD 分析 (非 AI): 提取关键词 vs 个人技能库。"""
+    body = request.get_json(silent=True) or {}
+    jd_text = (body.get("jd_text") or "").strip()
+    title = (body.get("title") or "").strip()
+    if not jd_text:
+        return jsonify({"error": {"code": "VALIDATION_ERROR", "message": "jd_text required"}}), 422
+    skills = query(
+        "SELECT name, level, target_level, status FROM skills "
+        "WHERE user_id = %s AND deleted_at IS NULL",
+        (USER_ID,),
+    )
+    result = analyze_jd(f"{title}\n{jd_text}", skills)
+    return jsonify({"data": result})
+
+
 # ========== 其他模块 (骨架, 后续阶段) ==========
 
 @app.get("/api/projects")
 def projects():
     return jsonify({"data": {"projects": []}})
-
-
-@app.get("/api/career")
-def career():
-    return jsonify({"data": {"summary": {}, "directions": []}})
 
 
 @app.get("/api/journal")

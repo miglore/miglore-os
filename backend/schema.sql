@@ -120,6 +120,8 @@ CREATE TABLE IF NOT EXISTS job_applications (
     direction_id BIGINT UNSIGNED NULL,
     company      VARCHAR(100) NOT NULL,
     position     VARCHAR(100) NOT NULL,
+    city         VARCHAR(100) NULL COMMENT '城市 (migration 003)',
+    salary       VARCHAR(100) NULL COMMENT '薪资 (migration 003)',
     channel      VARCHAR(50)  NULL,
     url          VARCHAR(500) NULL,
     status       ENUM('draft','applied','interviewing','offer','rejected','withdrawn') NOT NULL DEFAULT 'applied',
