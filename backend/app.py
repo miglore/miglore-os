@@ -5,17 +5,48 @@
 """
 
 import os
+import time
 from datetime import datetime, date
 
 import pymysql
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 load_dotenv()
 
 app = Flask(__name__)
+
+# ---------- Prometheus metrics ----------
+HTTP_REQUESTS = Counter(
+    "http_requests_total", "HTTP requests total", ["method", "path", "status"]
+)
+HTTP_LATENCY = Histogram(
+    "http_request_duration_seconds", "HTTP request latency", ["method", "path"]
+)
+
+
+@app.before_request
+def _record_start():
+    request._miglore_start = time.perf_counter()
+
+
+@app.after_request
+def _record_metrics(resp):
+    path = request.url_rule.rule if request.url_rule else request.path
+    method = request.method
+    status = str(resp.status_code)
+    HTTP_REQUESTS.labels(method=method, path=path, status=status).inc()
+    duration = time.perf_counter() - getattr(request, "_miglore_start", time.perf_counter())
+    HTTP_LATENCY.labels(method=method, path=path).observe(duration)
+    return resp
+
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
 
 class ISOJSONProvider(DefaultJSONProvider):
