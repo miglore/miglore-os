@@ -1,7 +1,7 @@
 <script lang="ts">
   import ProgressRing from '../shared/ProgressRing.svelte';
   import Badge from '../shared/Badge.svelte';
-  import type { DashboardData } from '../../lib/types';
+  import type { DashboardData } from '../../lib/api';
 
   let { hero }: { hero: NonNullable<DashboardData['hero']> } = $props();
 </script>
@@ -9,7 +9,9 @@
 <section class="hero">
   <div class="hero-top">
     <span class="hero-date">{hero.date} · {hero.weekday}</span>
-    <Badge tone="dark">🔥 连续学习 {hero.streak_days} 天</Badge>
+    {#if hero.streak_days > 0}
+      <Badge tone="dark">🔥 连续学习 {hero.streak_days} 天</Badge>
+    {/if}
   </div>
 
   <div class="hero-main">
@@ -18,7 +20,6 @@
       <h1 class="hero-title">{hero.career_goal}</h1>
       <p class="hero-track">
         <span class="track-name">{hero.active_track.title}</span>
-        <span class="track-stage">{hero.active_track.stage}</span>
       </p>
       <a class="btn-primary" href="#/learning">继续学习 →</a>
     </div>
@@ -83,7 +84,6 @@
   }
   .hero-track { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-6); }
   .track-name { font-weight: 600; font-size: 1.05rem; }
-  .track-stage { font-size: var(--fs-small); opacity: 0.8; background: rgba(255,255,255,0.16); padding: 3px 12px; border-radius: 999px; }
   .hero-ring { text-align: center; flex-shrink: 0; }
   .ring-caption { margin-top: var(--sp-2); font-size: var(--fs-micro); opacity: 0.75; }
 

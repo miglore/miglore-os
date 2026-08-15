@@ -1,13 +1,14 @@
 <script lang="ts">
   import Badge from '../shared/Badge.svelte';
-  import type { Project } from '../../lib/types';
+  import type { Project } from '../../lib/api';
 
   let { projects }: { projects: Project[] } = $props();
 
   const statusTone = (s: Project['status']) =>
     s === 'active' ? 'accent' : s === 'done' ? 'primary' : 'neutral';
   const statusLabel = (s: Project['status']) =>
-    ({ active: '进行中', paused: '暂停', done: '已完成', planning: '规划中', archived: '已归档' })[s];
+    ({ active: '进行中', paused: '暂停', done: '已完成', planning: '规划中', archived: '已归档' })[s] ??
+    s;
 </script>
 
 <section class="featured">
@@ -15,22 +16,27 @@
     <h2 class="section-title">Featured Projects</h2>
     <a class="section-link" href="#/projects">全部项目 →</a>
   </div>
-  <div class="proj-grid">
-    {#each projects as p (p.id)}
-      <a class="proj-card" href="#/projects">
-        <div class="proj-top">
-          <Badge tone={statusTone(p.status)}>{statusLabel(p.status)}</Badge>
-          <span class="proj-stack">{p.tech_stack}</span>
-        </div>
-        <h3 class="proj-name">{p.name}</h3>
-        <p class="proj-desc">{p.description}</p>
-        <div class="proj-progress">
-          <div class="proj-bar"><div class="proj-fill" style={`width: ${p.progress}%`}></div></div>
-          <span class="proj-pct">{p.progress}%</span>
-        </div>
-      </a>
-    {/each}
-  </div>
+
+  {#if projects.length === 0}
+    <div class="proj-empty">暂无项目，创建第一个项目开始吧（V1.1 支持）</div>
+  {:else}
+    <div class="proj-grid">
+      {#each projects as p (p.id)}
+        <a class="proj-card" href="#/projects">
+          <div class="proj-top">
+            <Badge tone={statusTone(p.status)}>{statusLabel(p.status)}</Badge>
+            <span class="proj-stack">{p.tech_stack ?? ''}</span>
+          </div>
+          <h3 class="proj-name">{p.name}</h3>
+          <p class="proj-desc">{p.description ?? ''}</p>
+          <div class="proj-progress">
+            <div class="proj-bar"><div class="proj-fill" style={`width: ${p.progress}%`}></div></div>
+            <span class="proj-pct">{p.progress}%</span>
+          </div>
+        </a>
+      {/each}
+    </div>
+  {/if}
 </section>
 
 <style>

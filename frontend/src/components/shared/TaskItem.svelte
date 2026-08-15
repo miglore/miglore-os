@@ -1,22 +1,34 @@
 <script lang="ts">
-  import type { Task } from '../../lib/types';
+  import type { Task } from '../../lib/api';
 
-  let { task }: { task: Task } = $props();
+  let {
+    task,
+    onToggle,
+  }: {
+    task: Task;
+    onToggle?: (task: Task, done: boolean) => void;
+  } = $props();
   // 本地勾选状态：初始取任务状态；仅当 task.status 变化时同步（用户手动勾选不被覆盖）
   let done = $state(false);
   $effect(() => {
     done = task.status === 'done';
   });
 
+  function handleChange() {
+    const next = !done;
+    done = next; // 乐观更新，父组件负责调用后端 PATCH
+    onToggle?.(task, next);
+  }
+
   const prioLabel = $derived(task.priority === 3 ? '高' : task.priority === 2 ? '中' : '低');
   const prioClass = $derived(
     task.priority === 3 ? 'p-high' : task.priority === 2 ? 'p-mid' : 'p-low'
   );
-  const meta = $derived(task.track ?? task.project ?? '');
+  const meta = $derived(task.track_name ?? '');
 </script>
 
 <label class="task-item" class:done>
-  <input type="checkbox" bind:checked={done} />
+  <input type="checkbox" checked={done} onchange={handleChange} />
   <span class="task-title">{task.title}</span>
   {#if meta}<span class="task-meta">{meta}</span>{/if}
   <span class="badge {prioClass}">{prioLabel}</span>

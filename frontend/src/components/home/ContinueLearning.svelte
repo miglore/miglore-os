@@ -1,12 +1,15 @@
 <script lang="ts">
   import Shelf from '../shared/Shelf.svelte';
   import Badge from '../shared/Badge.svelte';
-  import type { Task } from '../../lib/types';
+  import type { Task } from '../../lib/api';
 
   let { tasks }: { tasks: Task[] } = $props();
 </script>
 
 <Shelf title="Continue Learning" link="查看全部" linkHref="#/learning">
+  {#if tasks.length === 0}
+    <div class="empty-note">暂无学习任务，去「学习」页添加吧 →</div>
+  {/if}
   {#each tasks as t (t.id)}
     <article class="learn-card">
       <div class="learn-head">
@@ -16,8 +19,8 @@
         <span class="learn-due">{t.due_date ?? ''}</span>
       </div>
       <h3 class="learn-title">{t.title}</h3>
-      <p class="learn-track">{t.track}</p>
-      <a class="learn-cta" href="#/tasks">
+      <p class="learn-track">{t.track_name ?? ''}</p>
+      <a class="learn-cta" href="#/learning">
         {t.status === 'in_progress' ? '继续学习' : '开始学习'} →
       </a>
     </article>
@@ -25,6 +28,14 @@
 </Shelf>
 
 <style>
+  .empty-note {
+    width: 320px;
+    padding: var(--sp-5);
+    border: 1px dashed var(--c-border);
+    border-radius: var(--r-lg);
+    color: var(--c-text-2);
+    text-align: center;
+  }
   .learn-card {
     width: 260px;
     background: var(--c-surface);

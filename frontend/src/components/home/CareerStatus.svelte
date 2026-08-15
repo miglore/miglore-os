@@ -1,7 +1,12 @@
 <script lang="ts">
-  import type { CareerStat } from '../../lib/types';
+  let {
+    stats,
+  }: {
+    stats: { label: string; value: number }[] | Record<string, never>;
+  } = $props();
 
-  let { stats }: { stats: CareerStat[] } = $props();
+  const hasStats = $derived(Array.isArray(stats) && stats.length > 0);
+  const list = $derived(Array.isArray(stats) ? (stats as { label: string; value: number }[]) : []);
 </script>
 
 <section class="career">
@@ -10,23 +15,30 @@
     <a class="section-link" href="#/career">求职 →</a>
   </div>
 
-  <div class="career-panel">
-    <div class="career-dir">
-      <span class="dir-dot"></span>
-      <div>
-        <p class="dir-name">DevOps / 运维开发</p>
-        <p class="dir-sub">投递方向 · 进行中</p>
+  {#if !hasStats}
+    <div class="career-panel career-empty">
+      <p class="career-empty-title">求职模块开发中</p>
+      <p class="career-empty-sub">投递方向 · 投递记录 · 面试记录（V1.1 支持）</p>
+    </div>
+  {:else}
+    <div class="career-panel">
+      <div class="career-dir">
+        <span class="dir-dot"></span>
+        <div>
+          <p class="dir-name">DevOps / 运维开发</p>
+          <p class="dir-sub">投递方向 · 进行中</p>
+        </div>
+      </div>
+      <div class="career-stats">
+        {#each list as s (s.label)}
+          <div class="stat">
+            <span class="stat-value">{s.value}</span>
+            <span class="stat-label">{s.label}</span>
+          </div>
+        {/each}
       </div>
     </div>
-    <div class="career-stats">
-      {#each stats as s (s.label)}
-        <div class="stat">
-          <span class="stat-value">{s.value}</span>
-          <span class="stat-label">{s.label}</span>
-        </div>
-      {/each}
-    </div>
-  </div>
+  {/if}
 </section>
 
 <style>

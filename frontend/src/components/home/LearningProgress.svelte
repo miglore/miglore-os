@@ -1,11 +1,14 @@
 <script lang="ts">
   import Shelf from '../shared/Shelf.svelte';
-  import type { Skill } from '../../lib/types';
+  import type { Skill } from '../../lib/api';
 
   let { skills }: { skills: Skill[] } = $props();
 </script>
 
 <Shelf title="Learning Progress" link="技能清单" linkHref="#/learning">
+  {#if skills.length === 0}
+    <div class="empty-note">暂无技能数据</div>
+  {/if}
   {#each skills as s (s.id)}
     <div class="skill-card">
       <div class="skill-head">

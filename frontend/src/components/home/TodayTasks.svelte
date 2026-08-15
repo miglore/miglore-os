@@ -1,11 +1,19 @@
 <script lang="ts">
   import TaskItem from '../shared/TaskItem.svelte';
-  import type { Task } from '../../lib/types';
+  import type { Task } from '../../lib/api';
 
-  let { tasks }: { tasks: Task[] } = $props();
+  let {
+    tasks,
+    onToggle,
+  }: {
+    tasks: Task[];
+    onToggle?: (task: Task, done: boolean) => void;
+  } = $props();
 
   const sorted = $derived(
-    [...tasks].sort((a, b) => b.priority - a.priority || a.due_date!.localeCompare(b.due_date!))
+    [...tasks].sort(
+      (a, b) => b.priority - a.priority || (a.due_date ?? '').localeCompare(b.due_date ?? '')
+    )
   );
 </script>
 
@@ -20,7 +28,7 @@
       <div class="today-empty">今天已清空 🎉 可以休息或规划明天</div>
     {:else}
       {#each sorted as t (t.id)}
-        <TaskItem task={t} />
+        <TaskItem task={t} onToggle={onToggle} />
       {/each}
     {/if}
     <button class="add-task">+ 添加任务</button>

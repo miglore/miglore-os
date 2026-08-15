@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { StudyLog } from '../../lib/types';
+  import type { StudyLog } from '../../lib/api';
 
   let { logs }: { logs: StudyLog[] } = $props();
 
@@ -19,7 +19,13 @@
     <a class="section-link" href="#/journal">查看日志 →</a>
   </div>
 
-  <ol class="timeline">
+  {#if logs.length === 0}
+    <div class="recent-empty">
+      <p>还没有学习日志</p>
+      <span>完成学习任务后，日志会出现在这里（V1.1 支持）</span>
+    </div>
+  {:else}
+    <ol class="timeline">
     {#each logs as l (l.id)}
       <li class="tl-item">
         <span class="tl-dot"></span>
@@ -32,11 +38,20 @@
         </div>
       </li>
     {/each}
-  </ol>
+    </ol>
+  {/if}
 </section>
 
 <style>
   .recent { flex: 1; min-width: 0; }
+  .recent-empty {
+    padding: var(--sp-6);
+    border: 1px dashed var(--c-border);
+    border-radius: var(--r-lg);
+    text-align: center;
+  }
+  .recent-empty p { font-weight: 600; margin-bottom: 4px; }
+  .recent-empty span { font-size: var(--fs-small); color: var(--c-text-3); }
   .timeline {
     list-style: none;
     display: flex;
