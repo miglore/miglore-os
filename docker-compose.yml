@@ -5,7 +5,10 @@ name: miglore-os
 
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        DOCKER_GID: ${DOCKER_GID:-112}
     container_name: miglore-os-backend
     environment:
       DATABASE_HOST: mysql
@@ -20,6 +23,8 @@ services:
       - "127.0.0.1:5001:5001"
     volumes:
       - generated-posts:/generated-posts
+      # Linux Lab: backend 通过 docker.sock 管理 lab 容器 (仅操作 miglore-os-lab-*)
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       mysql:
         condition: service_healthy
@@ -103,6 +108,37 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  # Linux Lab: 隔离实验容器 (非特权, 独立网络, 无端口, 零宿主挂载)
+  lab:
+    image: ubuntu:24.04
+    container_name: miglore-os-lab
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+    networks:
+      - lab
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "test", "-f", "/etc/os-release"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  lab:
+    driver: bridge
 
 volumes:
   mysql-data:

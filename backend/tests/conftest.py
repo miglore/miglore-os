@@ -39,10 +39,15 @@ BASE_SEED = [
      "VALUES (1, 1, '测试路线', 'active', 1)", ()),
     ("INSERT INTO skills (id, user_id, track_id, name, level, target_level) "
      "VALUES (1, 1, 1, 'Linux', 3, 5)", ()),
+    ("INSERT INTO learning_tracks (id, user_id, title, status, sort_order) "
+     "VALUES (2, 1, 'Linux Engineer Roadmap V2', 'active', 2)", ()),
     ("INSERT INTO tasks (id, user_id, type, title, status, priority, track_id, skill_id) "
      "VALUES (1, 1, 'learning', '测试任务A', 'done', 2, 1, 1), "
      "(2, 1, 'learning', '测试任务B', 'in_progress', 3, 1, 1), "
      "(3, 1, 'learning', '测试任务C', 'todo', 1, 1, 1)", ()),
+    ("INSERT INTO tasks (id, user_id, type, title, status, track_id, skill_id, sort_order) "
+     "VALUES (101, 1, 'learning', '05 mkdir', 'todo', 2, 1, 5), "
+     "(102, 1, 'learning', '10 cat', 'todo', 2, 1, 10)", ()),
     ("INSERT INTO projects (id, user_id, name, tech_stack, status, progress, featured) "
      "VALUES (1, 1, '测试项目', 'Svelte·Flask·Docker', 'active', 50, 1)", ()),
 ]

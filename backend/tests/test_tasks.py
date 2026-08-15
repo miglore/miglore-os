@@ -5,7 +5,7 @@ def test_tasks_list(client):
     resp = client.get("/api/tasks")
     assert resp.status_code == 200
     tasks = resp.get_json()["data"]["tasks"]
-    assert len(tasks) == 3
+    assert len(tasks) == 5  # 3 个路线任务 + 2 个 Linux Lab 任务 (track 2)
 
 
 def test_tasks_filter_status(client):

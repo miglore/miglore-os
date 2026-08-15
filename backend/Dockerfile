@@ -2,6 +2,8 @@
 # 仅用于 miglore-os-dev (与生产 /var/www/miglore.fun 完全隔离)
 FROM python:3.12-slim
 
+ARG DOCKER_GID=112
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
@@ -11,12 +13,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-COPY app.py jd_analyzer.py ./
+COPY app.py jd_analyzer.py lab.py ./
 
-# 非 root 运行 (gunicorn worker)
+# 非 root 运行 (gunicorn worker); docker 组 gid 与宿主一致, 仅用于管理 Linux Lab 容器
 RUN useradd --create-home appuser \
     && mkdir -p /generated-posts \
-    && chown -R appuser:appuser /app /generated-posts
+    && chown -R appuser:appuser /app /generated-posts \
+    && groupadd -g ${DOCKER_GID} docker 2>/dev/null || true \
+    && usermod -aG docker appuser
 
 USER appuser
 

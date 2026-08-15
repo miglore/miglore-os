@@ -2,6 +2,7 @@
   const NAV = [
     { href: '#/', label: '首页' },
     { href: '#/learning', label: '学习' },
+    { href: '#/lab', label: 'Lab' },
     { href: '#/career', label: '求职' },
     { href: '#/projects', label: '项目' },
     { href: '#/tasks', label: '任务' },

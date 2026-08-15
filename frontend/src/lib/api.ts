@@ -208,3 +208,16 @@ export interface JDAnalyzeResult {
   missing: string[];
   score: number;
 }
+
+export interface LabExecResult {
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+}
+
+export interface LabVerifyResult {
+  passed: boolean;
+  output?: string;
+  task?: Task;
+  study_log?: { id: number; title: string; markdown: string };
+}

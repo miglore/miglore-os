@@ -3,6 +3,7 @@
   import Footer from './components/layout/Footer.svelte';
   import Home from './routes/Home.svelte';
   import Learning from './routes/Learning.svelte';
+  import Lab from './routes/Lab.svelte';
   import Career from './routes/Career.svelte';
   import Projects from './routes/Projects.svelte';
   import ProjectDetail from './routes/ProjectDetail.svelte';
@@ -30,6 +31,8 @@
     <Home />
   {:else if route.startsWith('#/learning')}
     <Learning />
+  {:else if route.startsWith('#/lab')}
+    <Lab />
   {:else if route.startsWith('#/career')}
     <Career />
   {:else if route.startsWith('#/projects')}

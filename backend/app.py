@@ -197,20 +197,20 @@ def health():
 
 @app.get("/api/learning")
 def learning():
-    """学习路线 + 当前路线 + 总体进度 + 学习任务。"""
+    """学习路线 + 当前路线 + 总体进度 + 学习任务 (限定当前 active track)。"""
     tracks = query(
         "SELECT * FROM learning_tracks WHERE user_id = %s AND deleted_at IS NULL ORDER BY sort_order, id",
         (USER_ID,),
     )
+    # 当前路线: 优先 active, 否则第一个
+    active = next((t for t in tracks if t["status"] == "active"), tracks[0]) if tracks else None
     tasks = query(
-        _TASK_SQL + " AND t.type = 'learning' ORDER BY t.sort_order, t.id",
-        (USER_ID,),
-    )
+        _TASK_SQL + " AND t.type = 'learning' AND t.track_id = %s ORDER BY t.sort_order, t.id",
+        (USER_ID, active["id"]),
+    ) if active else []
 
     current = None
-    if tracks:
-        # 当前路线: 优先 active, 否则第一个
-        active = next((t for t in tracks if t["status"] == "active"), tracks[0])
+    if active:
         stats = track_stats(active["id"])
         # 当前阶段: 取第一个进行中任务的阶段描述, 否则最近 done
         doing = next((t for t in tasks if t["status"] == "in_progress"), None)
@@ -225,7 +225,7 @@ def learning():
             "stats": stats,
         }
 
-    overall = track_stats(tracks[0]["id"]) if tracks else {"done": 0, "total": 0, "percent": 0}
+    overall = track_stats(active["id"]) if active else {"done": 0, "total": 0, "percent": 0}
 
     return jsonify({
         "data": {
@@ -241,17 +241,21 @@ def learning():
 
 @app.get("/api/tasks")
 def tasks():
-    """任务列表, 支持 ?status= &type= &limit=。"""
+    """任务列表, 支持 ?status= &type= &track_id= &limit=。"""
     where = []  # _TASK_SQL 已含 user_id + deleted_at 条件
     params: list = [USER_ID]
     status = request.args.get("status")
     task_type = request.args.get("type")
+    track_id = request.args.get("track_id")
     if status:
         where.append("t.status = %s")
         params.append(status)
     if task_type:
         where.append("t.type = %s")
         params.append(task_type)
+    if track_id:
+        where.append("t.track_id = %s")
+        params.append(int(track_id))
     limit = request.args.get("limit", type=int)
     sql = _TASK_SQL + (" AND " + " AND ".join(where) if where else "")
     sql += " ORDER BY t.sort_order, t.id"
@@ -1082,6 +1086,22 @@ def create_interview_evidence(eid: int):
 @app.get("/api/journal")
 def journal():
     return jsonify({"data": {"logs": []}})
+
+
+# ========== Linux Lab (独立实验环境) ==========
+
+from lab import register as register_lab  # noqa: E402
+
+register_lab(app, {
+    "execute": execute,
+    "query": query,
+    "query_one": query_one,
+    "execute_transaction": execute_transaction,
+    "get_task": get_task,
+    "get_study_log": get_study_log,
+    "generate_markdown": generate_markdown,
+    "USER_ID": USER_ID,
+})
 
 
 if __name__ == "__main__":
