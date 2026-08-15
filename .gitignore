@@ -21,3 +21,6 @@ Thumbs.db
 
 # 日志
 *.log
+
+# 学习日志生成的 Markdown (用户内容, 不入库)
+generated-posts/
